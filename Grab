@@ -3,83 +3,72 @@ set +H
 IP=$1
 Pass=$2
 
-
-
-
-Vendor=$(curl -s -k -u admin:$Pass https://$IP/redfish/v1|\jq| egrep "Vendor" | cut -d '"' -f4)
-
+Vendor=$(curl -s -k -u admin:$Pass https://$IP/redfish/v1 | jq | egrep "Vendor" | cut -d '"' -f4)
 
 if [[ "$Vendor" = "Lenovo" ]]; then
-        echo $Vendor
-        printf  "\033[1;31m-----------------------------------------------------------------------------        -\033[0m"
-        for i in {0..6};
-                do curl -s -k -u admin:$Pass https://$IP/redfish/v1/Systems/1/Storage/RAID_Slot2/Drives/Disk.$i|\jq| egrep "Model|SerialNumber$
-        done
+    echo $Vendor
+    printf "\033[1;31m----------------------------------------------------------------------------- \033[0m\n"
 
-# Print drive info
-echo -e "\033[1;31m================== DRIVE INFORMATION ==================\033[0m"
-for i in {0..9}; do
-    data=$(curl -s -k -u admin:$Pass https://$IP/redfish/v1/Systems/1/Storage/DA00000$i | jq -r '("Model: \(.Model // N/A)  |  Serial: \(.Seri$
-    if [ -n "$data" ]; then
-        echo -e "$data"
-    fi
-done
+    for i in {0..6}; do
+        curl -s -k -u admin:$Pass "https://$IP/redfish/v1/Systems/1/Storage/RAID_Slot2/Drives/Disk.$i" \
+        | jq | egrep "Model|SerialNumber"
+    done
 
-# Print mem info
-echo -e "\033[1;31m================== MEMORY INFORMATION =================\033[0m"
-for i in {1..8}; do
-    data=$(curl -s -k -u admin:$Pass https://$IP/redfish/v1/Systems/1/Memory/$i \
-        | jq -r '[
-            "Name: \(.Name)",
-            "Serial: \(.SerialNumber)",
-            "Manufacturer: \(.Manufacturer)"
-        ] | join("  |  ")')
-    # Filter out no want fields
-    echo -e "$data" | egrep -v "VendorID|Module|Subsystem"
-done
+    echo -e "\033[1;31m================== DRIVE INFORMATION ==================\033[0m"
+    for i in {0..9}; do
+        data=$(curl -s -k -u admin:$Pass "https://$IP/redfish/v1/Systems/1/Storage/DA00000$i" \
+            | jq -r '("Model: \(.Model // "N/A") | Serial: \(.SerialNumber // "N/A")")')
+        if [ -n "$data" ]; then
+            echo -e "$data"
+        fi
+    done
 
-echo -e "\033[1;31m======================================================\033[0m"
-
+    echo -e "\033[1;31m================== MEMORY INFORMATION =================\033[0m"
+    for i in {1..8}; do
+        data=$(curl -s -k -u admin:$Pass "https://$IP/redfish/v1/Systems/1/Memory/$i" \
+            | jq -r '[
+                "Name: \(.Name)",
+                "Serial: \(.SerialNumber)",
+                "Manufacturer: \(.Manufacturer)"
+            ] | join("  |  ")')
+        echo -e "$data" | egrep -v "VendorID|Module|Subsystem"
+    done
+    echo -e "\033[1;31m======================================================\033[0m"
 
 elif [[ "$Vendor" = "HPE" ]]; then
+    echo $Vendor
 
-        Echo $Vendor
+    echo -e "\033[1;32m================== DRIVE INFORMATION ==================\033[0m"
+    for i in {0..6}; do
+        curl -s -k -u admin:$Pass "https://$IP/redfish/v1/Systems/1/Storage/DA00000$i/Drives/DA00000$i" \
+        | jq -r --arg slot "$i" '
+            if type == "object" then
+                "Slot " + $slot +
+                ": Model: " + (.Model // "N/A") +
+                " | Serial: " + (.SerialNumber // "N/A") +
+                " | Power-On Hours: " +
+                (
+                    ((.Oem.Dell.PowerOnHours //
+                      .Oem.Hpe.PowerOnHours //
+                      .PowerOnHours //
+                      .HoursPoweredOn) | tostring // "N/A")
+                )
+            else
+                "Slot " + $slot + ": Model: N/A | Serial: N/A | Power-On Hours: N/A"
+            end
+        '
+    done
 
-# Print drive info
-echo -e "\033[1;32m================== DRIVE INFORMATION ==================\033[0m"
+    echo -e "\033[1;32m================== MEMORY INFORMATION =================\033[0m"
+    for i in {1..12}; do
+        data=$(curl -s -k -u admin:$Pass "https://$IP/redfish/v1/Systems/1/Memory/proc1dimm$i" \
+            | jq -r '[
+                "Name: \(.Name)",
+                "Serial: \(.SerialNumber)",
+                "Manufacturer: \(.Manufacturer)"
+            ] | join("  |  ")')
+        echo -e "$data" | egrep -v "VendorID|Module|Subsystem"
+    done
 
-for i in {0..6}; do
-    curl -s -k -u admin:$Pass "https://$IP/redfish/v1/Systems/1/Storage/DA00000$i/Drives/DA00000$i" \
-    | jq -r --arg slot "$i" '
-        if type == "object" then
-            "Slot " + $slot +
-            ": Model: " + (.Model // "N/A") +
-            " | Serial: " + (.SerialNumber // "N/A") +
-            " | Power-On Hours: " +
-            (
-                ((.Oem.Dell.PowerOnHours //
-                  .Oem.Hpe.PowerOnHours //
-                  .PowerOnHours //
-                  .HoursPoweredOn) | tostring // "N/A")
-            )
-        else
-            "Slot " + $slot + ": Model: N/A | Serial: N/A | Power-On Hours: N/A"
-        end
-    '
-done
-
-
-# Print mem info
-echo -e "\033[1;32m================== MEMORY INFORMATION =================\033[0m"
-for i in {1..12}; do
-    data=$(curl -s -k -u admin:$Pass https://$IP/redfish/v1/Systems/1/Memory/proc1dimm$i \
-        | jq -r '[
-            "Name: \(.Name)",
-            "Serial: \(.SerialNumber)",
-            "Manufacturer: \(.Manufacturer)"
-        ] | join("  |  ")')
-    # Filter out unwanted fields
-    echo -e "$data" | egrep -v "VendorID|Module|Subsystem"
-done
-
-echo -e "\033[1;32m======================================================\033[0m"
+    echo -e "\033[1;32m======================================================\033[0m"
+fi
